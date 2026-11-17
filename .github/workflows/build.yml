@@ -107,15 +107,31 @@ jobs:
           echo "=== overlay 内容 ==="
           find source/files source/env -type f
 
+          # 打开 ccache（编译缓存）。rules.mk:341 起把 TARGET_CC/HOSTCC 包上 ccache，
+          # 默认目录 .ccache 在工作树根，正好被下面的 actions/cache 缓存。
+          # rules.mk:346 默认 CCACHE_DIR = $(TOPDIR)/.ccache，不用显式指定
+          grep -qx 'CONFIG_CCACHE=y' source/.config || echo 'CONFIG_CCACHE=y' >> source/.config
+
       - name: 缓存 dl（源码包）
         if: ${{ !inputs.force_download }}
         uses: actions/cache@v4
         with:
+          # 不带 run_id：否则每次运行都新建一条缓存，10 GB 配额很快被顶穿。
+          # 以「配置文件 + feeds 定义」为键，配置不变就一直复用同一条。
           path: source/dl
-          key: dl-${{ hashFiles('ci/config/*.config') }}-${{ github.run_id }}
+          key: dl-${{ hashFiles('ci/config/*.config', 'ci/overlay/**') }}-v1
           restore-keys: |
-            dl-${{ hashFiles('ci/config/*.config') }}-
             dl-
+
+      - name: 缓存 feeds（省 2~4 分钟 clone）
+        uses: actions/cache@v4
+        with:
+          path: |
+            source/feeds
+            source/package/feeds
+          key: feeds-${{ hashFiles('source/feeds.conf.default') }}-v1
+          restore-keys: |
+            feeds-
 
       # ---------------------------------------------------------------- 配置
       - name: feeds update / install + defconfig
@@ -157,11 +173,54 @@ jobs:
           du -sh dl
 
       # ---------------------------------------------------------------- 编译
+      - name: 缓存 ccache（编译缓存）
+        uses: actions/cache@v4
+        with:
+          path: source/.ccache
+          key: ccache-${{ hashFiles('ci/config/*.config') }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ hashFiles('ci/config/*.config') }}-
+            ccache-
+          # 说明：key 里带 run_id 是有意的 —— actions/cache 命中后不会再保存，
+          # 不带 run_id 就永远只有第一次那份。上限靠 ccache --max-size=3G 控制，
+          # 旧条目由 GitHub 按 LRU 淘汰（单仓库 10 GB）。
+
+      - name: ccache 统计（缓存命中情况）
+        working-directory: source
+        run: |
+          CC=$(ls staging_dir/host/bin/ccache 2>/dev/null || command -v ccache || true)
+          if [ -n "$CC" ]; then
+            CCACHE_DIR="$PWD/.ccache" "$CC" --max-size=3G
+            CCACHE_DIR="$PWD/.ccache" "$CC" -s
+          else
+            echo "ccache 还没构建出来（tools 阶段会编），首轮无统计"
+          fi
+
       - name: 编译
         working-directory: source
+        env:
+          CCACHE_MAXSIZE: 3G
+          CCACHE_COMPRESS: 'true'
+          CCACHE_COMPRESSLEVEL: '6'
         run: |
           set -o pipefail
           make -j"${BUILD_JOBS}" V=w 2>&1 | tail -120
+
+      - name: ccache 命中率
+        if: always()
+        working-directory: source
+        run: |
+          CC=staging_dir/host/bin/ccache
+          [ -x "$CC" ] || CC=$(command -v ccache || true)
+          if [ -n "$CC" ] && [ -x "$CC" ]; then
+            CCACHE_DIR="$PWD/.ccache" "$CC" -s | tee /tmp/ccache.txt
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache.txt
+              echo '```'
+            } >> $GITHUB_STEP_SUMMARY
+          fi
 
       # ---------------------------------------------------------------- 产物
       - name: 生成校验和与摘要

@@ -67,6 +67,36 @@ cp  <tree>/env/kernel-config           overlay/env/kernel-config
 rsync -a <tree>/files/                 overlay/files/
 ```
 
+## 缓存策略
+
+| 缓存 | 路径 | key | 作用 |
+|---|---|---|---|
+| 源码包 `dl` | `source/dl` | 配置/overlay 哈希 + `v1` | 省掉 `make download`（本地实测 **2.4 GB**） |
+| `feeds` | `source/feeds`、`source/package/feeds` | `feeds.conf.default` 哈希 | 省 2~4 分钟 clone |
+| **ccache** | `source/.ccache` | 配置哈希 + `run_id` | 真正的**编译缓存**，命中后只重编改动过的对象 |
+
+要点：
+
+- ccache 由 `CONFIG_CCACHE=y` 打开（`rules.mk:341` 起把 `TARGET_CC` / `HOSTCC` 外面套一层
+  ccache），缓存目录默认就是 `$(TOPDIR)/.ccache`，正好在 `source/` 里，直接被缓存。
+- ccache 上限 `3 GB`（`--max-size=3G` + `CCACHE_COMPRESS`），避免顶穿 GitHub 单仓库
+  **10 GB** 的缓存配额；旧条目由 GitHub 按 LRU 淘汰。
+- ccache 的 key 带 `run_id` 是有意的：`actions/cache` 命中后**不再回写**，不带 `run_id`
+  就永远停留在第一次那份。代价是每次运行新增一条，靠 LRU 淘汰。
+- 缓存命中率会写进 job summary（`ccache -s`），自己看 hit rate 判断值不值得留。
+- `workflow_dispatch` 的 `force_download` 勾上会跳过 `dl` 缓存恢复（想彻底重下源码时用）。
+
+### 没缓存什么，以及为什么
+
+| 项 | 大小 | 为什么不缓存 |
+|---|---|---|
+| `build_dir` | 15~25 GB | 超过 10 GB 配额；且配置一变就是脏对象，报错很难查 |
+| `staging_dir` / `toolchain` | 5~10 GB | 体积大、对配置和 patch 极其敏感，跨 run 复用容易出玄学错误 |
+| `bin/` | 1 GB+ | 每次都要重新打包，缓存无意义 |
+
+> 如果以后确实需要"几分钟出包"，正确做法是挂 **self-hosted runner**（机器上保留
+> `build_dir`/`staging_dir`），而不是把 20 GB 塞进 Actions 缓存。
+
 ## 已知限制
 
 - **GitHub 免费 runner 只有 4 核 / 16 GB，job 上限 6 小时。** 这套配置（Docker +
