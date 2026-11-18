@@ -112,6 +112,20 @@ jobs:
           # rules.mk:346 默认 CCACHE_DIR = $(TOPDIR)/.ccache，不用显式指定
           grep -qx 'CONFIG_CCACHE=y' source/.config || echo 'CONFIG_CCACHE=y' >> source/.config
 
+      # 兜底：源码树里「带 shebang 的脚本没有执行位」这类问题本地编得动
+      # （工作区被人 chmod 过），干净 clone 就报 Permission denied（Error 126）。
+      # 只扫我们自己的目录，不动 feeds。
+      - name: 预检：脚本执行位
+        run: |
+          set -e
+          fixed=0
+          for f in $(find source/package/custom source/files -type f -name '*.sh' 2>/dev/null); do
+            if head -c2 "$f" | grep -q '#!' && [ ! -x "$f" ]; then
+              chmod +x "$f"; echo "chmod +x $f"; fixed=$((fixed+1))
+            fi
+          done
+          echo "修正了 $fixed 个文件（0 表示源码没问题）"
+
       - name: 缓存 dl（源码包）
         if: ${{ !inputs.force_download }}
         uses: actions/cache@v4
