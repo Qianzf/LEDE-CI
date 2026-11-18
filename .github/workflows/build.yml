@@ -119,9 +119,24 @@ jobs:
           # 不带 run_id：否则每次运行都新建一条缓存，10 GB 配额很快被顶穿。
           # 以「配置文件 + feeds 定义」为键，配置不变就一直复用同一条。
           path: source/dl
-          key: dl-${{ hashFiles('ci/config/*.config', 'ci/overlay/**') }}-v1
+          # key 里的 vN 是手动版本号：命中后 actions/cache 不会再写这一条，
+          # 所以要“刷新”dl 缓存只能改这个后缀（配合下面 dl-seed 补包）。
+          key: dl-${{ hashFiles('ci/config/*.config', 'ci/overlay/**') }}-v2
           restore-keys: |
             dl-
+
+      # erofs-utils 这类包只发布在 git.kernel.org 的 git snapshot 上：
+      # sources.openwrt.org / sources.cdn.openwrt.org / mirror2 全部 404，
+      # 而 GitHub runner 连 git.kernel.org 会超时。它是 host 工具，编不过
+      # 整个构建立刻停，所以随仓库带一份（sha256 与 PKG_HASH 一致）。
+      - name: 补充镜像上缺失的源码包
+        run: |
+          set -e
+          mkdir -p source/dl
+          if [ -d ci/dl-seed ]; then
+            cp -n ci/dl-seed/* source/dl/ 2>/dev/null || true
+          fi
+          ls -l source/dl | tail -5
 
       - name: 缓存 feeds（省 2~4 分钟 clone）
         uses: actions/cache@v4

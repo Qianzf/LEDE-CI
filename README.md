@@ -117,3 +117,14 @@ DFS/CAC 语义）的完整排查记录在源仓库：
 
 - `firmware-changes/WIFI-FIX.md`
 - `firmware-changes/CHANGES.md`
+
+## 已知的外部依赖坑
+
+- **erofs-utils**（host 工具，构建很早就编）只发布在
+  `git.kernel.org/.../xiang/erofs-utils.git/snapshot/`，
+  OpenWrt 的三个源镜像（`sources.openwrt.org`、`sources.cdn.openwrt.org`、
+  `mirror2.openwrt.org`）上都没有对应版本（404），GitHub runner 直连
+  git.kernel.org 又会超时 → 整个构建在 `tools/erofs-utils` 处失败。
+  处理：源码包随仓库放在 `dl-seed/`，workflow 在还原 `source/dl` 缓存后
+  用 `cp -n` 补进去（哈希与 Makefile 里的 `PKG_HASH` 一致）。
+  将来升级该包时，同步替换 `dl-seed/` 里的那份。
