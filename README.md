@@ -128,3 +128,18 @@ DFS/CAC 语义）的完整排查记录在源仓库：
   处理：源码包随仓库放在 `dl-seed/`，workflow 在还原 `source/dl` 缓存后
   用 `cp -n` 补进去（哈希与 Makefile 里的 `PKG_HASH` 一致）。
   将来升级该包时，同步替换 `dl-seed/` 里的那份。
+
+## 产物发布（Release）
+
+编译成功后自动把固件发布到本仓库的 Releases，实现参考
+[VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI)：
+
+- 用 `softprops/action-gh-release@v2`，tag 形如 `BE6500-26.11.18-r42`
+  （`日期` + `run_number`，每次构建唯一）
+- 附件统一重命名为 `BE6500-<日期>-r<run>-squashfs-{sysupgrade,factory}.bin`，
+  另附 `sha256sums.txt`（**改名后重算**，与下载文件名对得上）和本次的 `config-<日期>-r<run>.txt`
+- Release 说明里写内核版本、源码提交、软件包数量、sysupgrade 的 sha256、刷机方式
+- 每次发布后自动删除旧 Release（**保留最近 3 个**），避免仓库被几百 MB 的包撑爆
+- workflow 需要 `permissions: contents: write`（用内置 `GITHUB_TOKEN`，不需要额外 PAT）
+
+Actions 页面「Artifacts」里的 `jdcloud-be6500-<run>` 依旧保留 30 天，作为临时下载。
