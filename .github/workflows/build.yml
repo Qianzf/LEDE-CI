@@ -373,8 +373,13 @@ jobs:
 
       - name: 清理旧 Release（只留最近 3 个）
         if: success() && steps.pack.outputs.skip == 'false'
+        # 工作区根目录不是 git 仓库（source/ 与 ci/ 才是各自的 checkout），
+        # gh 默认靠 `git remote` 推断仓库，会报
+        # "failed to run git: fatal: not a git repository"，所以显式给 GH_REPO。
+        working-directory: ci
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set +e
           # 只清理本工作流建的 tag（BE6500-*），别碰手动建的 release
