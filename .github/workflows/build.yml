@@ -218,8 +218,40 @@ jobs:
           CCACHE_COMPRESS: 'true'
           CCACHE_COMPRESSLEVEL: '6'
         run: |
+          # 保留完整日志：之前是 `| tail -120`，真正的报错行被丢掉了，
+          # 出错时只能看到最后几个包的"changing mode of ..."。
           set -o pipefail
-          make -j"${BUILD_JOBS}" V=w 2>&1 | tail -120
+          make -j"${BUILD_JOBS}" V=w 2>&1 | tee /tmp/build.log
+
+      - name: 编译失败诊断
+        if: failure()
+        working-directory: source
+        run: |
+          set +e
+          {
+            echo '## 编译失败诊断'
+            echo ''
+            echo '### ERROR / 关键错误行'
+            echo '```'
+            grep -nE "ERROR:|error:|fatal error|Error [0-9]+$|Killed|signal [0-9]|No space left|undefined reference|cannot find" \
+              /tmp/build.log 2>/dev/null | tail -60
+            echo '```'
+            echo ''
+            echo '### 最后 80 行'
+            echo '```'
+            tail -80 /tmp/build.log 2>/dev/null
+            echo '```'
+            echo ''
+            echo '### 资源'
+            echo '```'
+            df -h /
+            free -m
+            dmesg 2>/dev/null | tail -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo '=== 错误行 ==='
+          grep -nE "ERROR:|error:|fatal error|Killed|No space left" /tmp/build.log 2>/dev/null | tail -40
+          exit 0
 
       - name: ccache 命中率
         if: always()
