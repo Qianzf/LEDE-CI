@@ -377,8 +377,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
+          # 只清理本工作流建的 tag（BE6500-*），别碰手动建的 release
           gh release list --limit 100 --json tagName,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+            --jq 'map(select(.tagName | startswith("BE6500-")))
+                  | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
           while read -r tag; do
             [ -n "$tag" ] || continue
             echo "删除旧 Release: $tag"
