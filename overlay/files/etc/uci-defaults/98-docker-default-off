@@ -1,0 +1,17 @@
+#!/bin/sh
+# 出厂/恢复出厂后 Docker 不随系统启动。
+#
+# 镜像构建时 include/rootfs.mk 会给所有 init 脚本建 S?? 软链接，dockerd 因此
+# 默认是开机自启的。这里把它关掉，但只在"配置生命周期内执行一次"：
+# 一旦写过 dockerd.globals.autostart 标记，就当作用户已经自己做过决定，
+# 以后（包括 sysupgrade）都不再干预。
+[ -x /etc/init.d/dockerd ] || exit 0
+
+cur=$(uci -q get dockerd.globals.autostart)
+[ -n "$cur" ] && exit 0
+
+uci -q set dockerd.globals.autostart='off'
+uci -q commit dockerd
+/etc/init.d/dockerd disable
+logger -t docker-default "dockerd autostart disabled (factory default)"
+exit 0
