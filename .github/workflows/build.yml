@@ -169,6 +169,13 @@ jobs:
           set -e
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          # dockerd depends on containerd at run time, and containerd/runc used to
+          # declare a build dependency on dockerd, which makes the package graph
+          # circular and leaves the compile order undefined.  Neither of them
+          # needs dockerd sources (both build from their own GO_PKG tree).
+          sed -i 's|^PKG_BUILD_DEPENDS:=golang/host dockerd$|PKG_BUILD_DEPENDS:=golang/host|' \
+            feeds/packages/utils/containerd/Makefile \
+            feeds/packages/utils/runc/Makefile
           make defconfig
           echo "=== 关键配置核对 ==="
           for k in \
